@@ -2,6 +2,8 @@ services:
 
   pdns-recursor-pgsql:
     image: pschiffe/pdns-recursor:${RECURSOR_TAG:-latest}
+    expose:
+      - 8082 # Web server
     networks:
       - pdns-pgsql
     volumes:
@@ -12,7 +14,9 @@ services:
         hard: 5000
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:${POSTGRES_VERSION}
+    expose:
+      - 5432
     networks:
       pdns-pgsql:
         aliases:
@@ -22,14 +26,14 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - pgsql:/var/lib/postgresql/data:Z
     environment:
-      - POSTGRES_PASSWORD=my-secret-pw
+      POSTGRES_PASSWORD: ${PDNS_gpgsql_password}
     healthcheck:
       test: ['CMD', 'pg_isready', '-U', 'postgres']
       timeout: 10s
       retries: 5
 
   adminer:
-    image: adminer
+    image: adminer:${ADMINER_VERSION}
     networks:
       - pdns-pgsql
     ports:
@@ -40,6 +44,12 @@ services:
   pdns-pgsql-master:
     image: pschiffe/pdns-pgsql:${PDNS_PGSQL_TAG:-latest}
     hostname: ns1.example.com
+    ports:
+      - 53:53
+      - 53:53/udp
+    expose:
+      - 53
+      - 8081 # Web server
     networks:
       pdns-pgsql:
         ipv4_address: 172.8.0.20
@@ -51,13 +61,14 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
     environment:
-      - PDNS_gpgsql_password=my-secret-pw
+      - PDNS_gpgsql_password=${PDNS_gpgsql_password}
       - PDNS_primary=yes
       - PDNS_api=yes
-      - PDNS_api_key=secret
+      - PDNS_api_key=${PDNS_API_KEY}
       - PDNS_webserver=yes
       - PDNS_webserver_address=0.0.0.0
       - PDNS_webserver_allow_from=172.8.0.0/16
+      #- PDNS_webserver_password=
       - PDNS_version_string=anonymous
       - PDNS_default_ttl=1500
       - PDNS_allow_axfr_ips=172.8.0.21
@@ -68,6 +79,9 @@ services:
   pdns-pgsql-slave:
     image: pschiffe/pdns-pgsql:${PDNS_PGSQL_TAG:-latest}
     hostname: ns2.example.com
+    expose:
+      - 53
+      - 8081 # Web server
     networks:
       pdns-pgsql:
         ipv4_address: 172.8.0.21
@@ -78,7 +92,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - PDNS_gpgsql_dbname=powerdnsslave
-      - PDNS_gpgsql_password=my-secret-pw
+      - PDNS_gpgsql_password=${PDNS_gpgsql_password}
       - PDNS_secondary=yes
       - PDNS_autosecondary=yes
       - PDNS_webserver=yes
@@ -93,7 +107,7 @@ services:
       - pdns-pgsql-master
 
   pdns-admin-pgsql:
-    image: pschiffe/pdns-admin
+    image: pschiffe/pdns-admin:${PDNS_ADMIN_TAG:-latest}
     networks:
       pdns-pgsql:
         aliases:
@@ -104,12 +118,12 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - PDNS_ADMIN_SQLA_DB_TYPE=postgres
-      - PDNS_ADMIN_SQLA_DB_HOST=pgsql
-      - PDNS_ADMIN_SQLA_DB_PORT=5432
-      - PDNS_ADMIN_SQLA_DB_USER=postgres
-      - PDNS_ADMIN_SQLA_DB_PASSWORD=my-secret-pw
+      - PDNS_ADMIN_SQLA_DB_HOST=postgres
+      - PDNS_ADMIN_SQLA_DB_PORT=${PDNS_gpgsql_port}
+      - PDNS_ADMIN_SQLA_DB_USER=${PDNS_gpgsql_user}
+      - PDNS_ADMIN_SQLA_DB_PASSWORD=${PDNS_gpgsql_password}
       - PDNS_VERSION=4.8
-      - PDNS_API_KEY=secret
+      - PDNS_API_KEY=${PDNS_API_KEY}
     depends_on:
       - postgres
       - pdns-pgsql-master
@@ -123,3 +137,7 @@ networks:
 
 volumes:
   pgsql:
+    driver_opts:
+      type: none
+      device: ${VOLUMES_ROOT}/postgres
+      o: bind
